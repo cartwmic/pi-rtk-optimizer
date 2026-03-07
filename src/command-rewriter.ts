@@ -1,7 +1,9 @@
-import type { RtkIntegrationConfig } from "./types.js";
+import { shouldBypassRewriteForCommand } from "./rewrite-bypass.js";
 import { RTK_REWRITE_RULES, type RtkRewriteCategory, type RtkRewriteRule } from "./rewrite-rules.js";
+import type { RtkIntegrationConfig } from "./types.js";
 
 const ENV_PREFIX_PATTERN = /^((?:[A-Za-z_][A-Za-z0-9_]*=[^\s]*\s+)*)/;
+const SHELL_ENV_ASSIGNMENT_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=.*/;
 
 type CommandToken =
 	| {
@@ -12,6 +14,14 @@ type CommandToken =
 			type: "separator";
 			value: string;
 	  };
+
+type SedNextTokenMode = "none" | "defaultScript" | "expressionScript" | "fileArgument" | "inPlaceArgument";
+
+interface SegmentParseState {
+	commandName?: string;
+	sedNextTokenMode: SedNextTokenMode;
+	sedScriptSeen: boolean;
+}
 
 export interface RewriteDecision {
 	changed: boolean;
@@ -69,6 +79,162 @@ function categoryEnabled(config: RtkIntegrationConfig, category: RtkRewriteCateg
 	}
 }
 
+function createSegmentParseState(): SegmentParseState {
+	return {
+		sedNextTokenMode: "none",
+		sedScriptSeen: false,
+	};
+}
+
+function normalizeShellWord(word: string): string {
+	const unwrapped = word.replace(/^(?:["'`])|(?:["'`])$/g, "");
+	const lastPathSeparator = Math.max(unwrapped.lastIndexOf("/"), unwrapped.lastIndexOf("\\"));
+	const basename = lastPathSeparator >= 0 ? unwrapped.slice(lastPathSeparator + 1) : unwrapped;
+	return basename.toLowerCase();
+}
+
+function shouldProtectSedWord(state: SegmentParseState): boolean {
+	return (
+		state.commandName === "sed" &&
+		!state.sedScriptSeen &&
+		(state.sedNextTokenMode === "defaultScript" ||
+			state.sedNextTokenMode === "expressionScript" ||
+			state.sedNextTokenMode === "inPlaceArgument")
+	);
+}
+
+function isQuotedEmptyToken(word: string): boolean {
+	return word === "''" || word === '""';
+}
+
+function looksLikeSedBackupExtension(word: string): boolean {
+	const normalized = word.replace(/^(?:["'`])|(?:["'`])$/g, "");
+	return normalized.startsWith(".") || normalized === "*";
+}
+
+function updateSegmentParseState(state: SegmentParseState, word: string): SegmentParseState {
+	if (!word) {
+		return state;
+	}
+
+	if (!state.commandName) {
+		if (SHELL_ENV_ASSIGNMENT_PATTERN.test(word)) {
+			return state;
+		}
+
+		const commandName = normalizeShellWord(word);
+		return {
+			commandName,
+			sedNextTokenMode: "none",
+			sedScriptSeen: false,
+		};
+	}
+
+	if (state.commandName !== "sed" || state.sedScriptSeen) {
+		return state;
+	}
+
+	if (state.sedNextTokenMode === "expressionScript") {
+		return {
+			...state,
+			sedNextTokenMode: "none",
+			sedScriptSeen: true,
+		};
+	}
+
+	if (state.sedNextTokenMode === "fileArgument") {
+		return {
+			...state,
+			sedNextTokenMode: "none",
+		};
+	}
+
+	if (state.sedNextTokenMode === "inPlaceArgument") {
+		if (isQuotedEmptyToken(word) || looksLikeSedBackupExtension(word)) {
+			return {
+				...state,
+				sedNextTokenMode: "defaultScript",
+			};
+		}
+
+		return {
+			...state,
+			sedNextTokenMode: "none",
+			sedScriptSeen: true,
+		};
+	}
+
+	if (state.sedNextTokenMode === "defaultScript") {
+		return {
+			...state,
+			sedNextTokenMode: "none",
+			sedScriptSeen: true,
+		};
+	}
+
+	if (word === "--") {
+		return {
+			...state,
+			sedNextTokenMode: "defaultScript",
+		};
+	}
+
+	if (word === "-e" || word === "--expression") {
+		return {
+			...state,
+			sedNextTokenMode: "expressionScript",
+		};
+	}
+
+	if (word.startsWith("--expression=")) {
+		return {
+			...state,
+			sedScriptSeen: true,
+		};
+	}
+
+	if (/^-[A-Za-z]*e[A-Za-z]*$/.test(word)) {
+		return {
+			...state,
+			sedNextTokenMode: "expressionScript",
+		};
+	}
+
+	if (word === "-f" || word === "--file") {
+		return {
+			...state,
+			sedNextTokenMode: "fileArgument",
+		};
+	}
+
+	if (word.startsWith("--file=") || /^-f.+$/.test(word)) {
+		return state;
+	}
+
+	if (word === "-i" || word === "--in-place") {
+		return {
+			...state,
+			sedNextTokenMode: "inPlaceArgument",
+		};
+	}
+
+	if (word.startsWith("--in-place=") || /^-i.+$/.test(word)) {
+		return {
+			...state,
+			sedNextTokenMode: "defaultScript",
+		};
+	}
+
+	if (word.startsWith("-")) {
+		return state;
+	}
+
+	return {
+		...state,
+		sedScriptSeen: true,
+	};
+}
+
 function tokenizeCommand(command: string): CommandToken[] {
 	if (!command) {
 		return [];
@@ -76,11 +242,47 @@ function tokenizeCommand(command: string): CommandToken[] {
 
 	const tokens: CommandToken[] = [];
 	let segmentStart = 0;
+	let segmentState = createSegmentParseState();
+	let currentWordStart: number | null = null;
+	let currentWordProtected = false;
 	let quote: "'" | '"' | "`" | null = null;
 	let escaped = false;
 
+	const finalizeWord = (endIndexExclusive: number): void => {
+		if (currentWordStart === null) {
+			return;
+		}
+
+		const word = command.slice(currentWordStart, endIndexExclusive);
+		segmentState = updateSegmentParseState(segmentState, word);
+		currentWordStart = null;
+		currentWordProtected = false;
+	};
+
+	const pushSeparator = (index: number, length: number): void => {
+		finalizeWord(index);
+		const segment = command.slice(segmentStart, index);
+		if (segment.length > 0) {
+			tokens.push({ type: "segment", value: segment });
+		}
+		tokens.push({ type: "separator", value: command.slice(index, index + length) });
+		segmentStart = index + length;
+		segmentState = createSegmentParseState();
+	};
+
+	const beginWord = (index: number): void => {
+		if (currentWordStart !== null) {
+			return;
+		}
+
+		currentWordStart = index;
+		currentWordProtected = shouldProtectSedWord(segmentState);
+	};
+
 	for (let index = 0; index < command.length; index += 1) {
 		const char = command[index];
+		const nextChar = command[index + 1] ?? "";
+		const prevChar = index > 0 ? command[index - 1] ?? "" : "";
 
 		if (escaped) {
 			escaped = false;
@@ -98,32 +300,62 @@ function tokenizeCommand(command: string): CommandToken[] {
 			continue;
 		}
 
+		if (char === "\\") {
+			beginWord(index);
+			escaped = true;
+			continue;
+		}
+
+		if (/\s/.test(char)) {
+			finalizeWord(index);
+			continue;
+		}
+
+		if (!currentWordProtected) {
+			if (char === "&" && nextChar === "&") {
+				pushSeparator(index, 2);
+				index += 1;
+				continue;
+			}
+
+			if (char === "|" && nextChar === "|") {
+				pushSeparator(index, 2);
+				index += 1;
+				continue;
+			}
+
+			if (char === "|" && nextChar === "&") {
+				pushSeparator(index, 2);
+				index += 1;
+				continue;
+			}
+
+			if (char === "|" && prevChar !== ">") {
+				pushSeparator(index, 1);
+				continue;
+			}
+
+			if (char === "&" && nextChar !== ">" && prevChar !== ">" && prevChar !== "<") {
+				pushSeparator(index, 1);
+				continue;
+			}
+
+			if (char === ";") {
+				pushSeparator(index, 1);
+				continue;
+			}
+		}
+
 		if (char === "'" || char === '"' || char === "`") {
+			beginWord(index);
 			quote = char;
 			continue;
 		}
 
-		const nextChar = command[index + 1] ?? "";
-		if ((char === "&" && nextChar === "&") || (char === "|" && nextChar === "|")) {
-			const segment = command.slice(segmentStart, index);
-			if (segment.length > 0) {
-				tokens.push({ type: "segment", value: segment });
-			}
-			tokens.push({ type: "separator", value: command.slice(index, index + 2) });
-			segmentStart = index + 2;
-			index += 1;
-			continue;
-		}
-
-		if (char === ";") {
-			const segment = command.slice(segmentStart, index);
-			if (segment.length > 0) {
-				tokens.push({ type: "segment", value: segment });
-			}
-			tokens.push({ type: "separator", value: ";" });
-			segmentStart = index + 1;
-		}
+		beginWord(index);
 	}
+
+	finalizeWord(command.length);
 
 	const tail = command.slice(segmentStart);
 	if (tail.length > 0 || tokens.length === 0) {
@@ -191,6 +423,10 @@ function rewriteSingleSegmentCommand(
 		}
 
 		rule.matcher.lastIndex = 0;
+		if (shouldBypassRewriteForCommand(commandBody, rule)) {
+			continue;
+		}
+
 		const rewrittenBody = commandBody.replace(rule.matcher, rule.replacement);
 		const finalizedRewrittenBody = applyPlatformProxyCommandFixups(rewrittenBody);
 		if (finalizedRewrittenBody === commandBody) {

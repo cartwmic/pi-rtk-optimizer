@@ -239,6 +239,13 @@ export const RTK_REWRITE_RULES: RtkRewriteRule[] = [
 		description: "pnpm with leading flags -> proxy",
 	},
 	{
+		id: "pnpm-dlx-proxy",
+		category: "packageManagers",
+		matcher: /^pnpm\s+dlx\b(.*)$/,
+		replacement: "rtk proxy pnpm dlx$1",
+		description: "pnpm dlx -> proxy",
+	},
+	{
 		id: "pnpm-any",
 		category: "packageManagers",
 		matcher: /^pnpm\s+(.+)$/,

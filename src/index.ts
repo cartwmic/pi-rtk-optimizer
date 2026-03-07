@@ -11,6 +11,7 @@ import { registerRtkIntegrationCommand } from "./config-modal.js";
 import { EXTENSION_NAME } from "./constants.js";
 import { clearOutputMetrics, getOutputMetricsSummary } from "./output-metrics.js";
 import { compactToolResult, type ToolResultCompactionMetadata } from "./output-compactor.js";
+import { shouldRequireRtkAvailabilityForCommandHandling, shouldSkipCommandHandlingWhenRtkMissing } from "./runtime-guard.js";
 import type { RtkIntegrationConfig, RuntimeStatus } from "./types.js";
 import { applyWindowsBashCompatibilityFixes } from "./windows-command-helpers.js";
 
@@ -86,7 +87,7 @@ export default function rtkIntegrationExtension(pi: ExtensionAPI): void {
 		}
 	};
 
-	const refreshConfig = (ctx?: ExtensionContext | ExtensionCommandContext): void => {
+	const refreshConfig = async (ctx?: ExtensionContext | ExtensionCommandContext): Promise<void> => {
 		const ensured = ensureConfigExists();
 		if (ensured.error && ctx) {
 			warnOnce(ctx, ensured.error);
@@ -95,6 +96,7 @@ export default function rtkIntegrationExtension(pi: ExtensionAPI): void {
 		const loaded = loadRtkIntegrationConfig();
 		config = loaded.config;
 		pendingLoadWarning = loaded.warning;
+		await refreshRuntimeStatus();
 
 		if (pendingLoadWarning && ctx) {
 			warnOnce(ctx, pendingLoadWarning);
@@ -162,7 +164,7 @@ export default function rtkIntegrationExtension(pi: ExtensionAPI): void {
 	};
 
 	const ensureRuntimeStatusFresh = async (): Promise<void> => {
-		if (!config.guardWhenRtkMissing) {
+		if (!shouldRequireRtkAvailabilityForCommandHandling(config)) {
 			return;
 		}
 
@@ -186,14 +188,12 @@ export default function rtkIntegrationExtension(pi: ExtensionAPI): void {
 	registerRtkIntegrationCommand(pi, controller);
 
 	pi.on("session_start", async (_event, ctx) => {
-		refreshConfig(ctx);
-		await refreshRuntimeStatus();
+		await refreshConfig(ctx);
 		maybeWarnRtkMissing(ctx);
 	});
 
 	pi.on("session_switch", async (_event, ctx) => {
-		refreshConfig(ctx);
-		await refreshRuntimeStatus();
+		await refreshConfig(ctx);
 		maybeWarnRtkMissing(ctx);
 	});
 
@@ -227,7 +227,7 @@ export default function rtkIntegrationExtension(pi: ExtensionAPI): void {
 		}
 
 		await ensureRuntimeStatusFresh();
-		if (config.guardWhenRtkMissing && !runtimeStatus.rtkAvailable) {
+		if (shouldSkipCommandHandlingWhenRtkMissing(config, runtimeStatus)) {
 			return {};
 		}
 
@@ -278,9 +278,7 @@ export default function rtkIntegrationExtension(pi: ExtensionAPI): void {
 
 			return {
 				content: outcome.content,
-				details: outcome.metadata
-					? mergeCompactionDetails((event as Record<string, unknown>).details, outcome.metadata)
-					: undefined,
+				details: outcome.metadata ? mergeCompactionDetails(event.details, outcome.metadata) : undefined,
 			};
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
