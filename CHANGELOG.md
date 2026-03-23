@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-03-23
+
+### Added
+- RTK_DB_PATH environment variable support for rewritten commands — enables RTK history database isolation per session
+- Tool execution sanitizer to strip RTK self-diagnostics from streamed bash results before TUI rendering
+- Tracking of active bash commands by tool call ID for output sanitization
+- `rtk-command-environment.ts` module for platform-specific temp directory resolution and shell-safe quoting
+
+### Changed
+- Updated `@mariozechner/pi-coding-agent` and `@mariozechner/pi-tui` peer dependencies to ^0.62.0
+- Simplified RTK hook warning detection — removed unused command-specific patterns and consolidated detection logic
+- Focus on canonical hook warning messages that RTK emits
+- Updated tests to verify simplified behavior and ensure non-hook RTK output is preserved verbatim
+
+### Tests
+- Added additional coverage tests for edge cases
+- Added tests for output compactor behavior with RTK diagnostics
+- Added tests for emoji stripping in RTK output
+
 ## [0.4.0] - 2026-03-12
 
 ### Added
