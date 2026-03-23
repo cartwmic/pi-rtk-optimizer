@@ -14,6 +14,9 @@ import { matchesCommandPatterns, normalizeCommandForDetection } from "./techniqu
 import { compactPath } from "./techniques/path-utils.ts";
 import { applyWindowsBashCompatibilityFixes } from "./windows-command-helpers.ts";
 import { applyRewrittenCommandShellSafetyFixups } from "./rewrite-pipeline-safety.ts";
+import { sanitizeStreamingBashExecutionResult } from "./tool-execution-sanitizer.ts";
+import { sanitizeRtkEmojiOutput } from "./techniques/emoji.ts";
+import { stripRtkHookWarnings } from "./techniques/rtk.ts";
 
 function makeTempConfigPath(): string {
 	return `${getRtkIntegrationConfigPath()}.test-${Date.now()}-${Math.random().toString(16).slice(2)}.json`;
@@ -192,6 +195,84 @@ runTest("rewrite pipeline safety buffers rewritten Windows producer commands", (
 	}
 
 	assert.equal(applyRewrittenCommandShellSafetyFixups("git diff | grep TODO"), "git diff | grep TODO");
+});
+
+runTest("stripRtkHookWarnings handles bare, prefixed, and already-sanitized hook notices", () => {
+	assert.equal(
+		stripRtkHookWarnings("No hook installed — run `rtk init -g` for automatic token savings\n\nready\n", null),
+		"ready\n",
+	);
+	assert.equal(
+		stripRtkHookWarnings("[WARN] Hook outdated — run `rtk init -g` to update\n\nready\n", null),
+		"ready\n",
+	);
+	assert.equal(
+		stripRtkHookWarnings(
+			"?? bun.lock[rtk] /!\\ No hook installed — run `rtk init -g` for automatic token savings\n",
+			null,
+		),
+		"?? bun.lock\n",
+	);
+	assert.equal(
+		stripRtkHookWarnings("[rtk] /!\\ No hook installed — run `rtk init -g` for automatic token savings\n\n", "rtk git status"),
+		"",
+	);
+});
+
+runTest("stripRtkHookWarnings leaves quoted hook text untouched", () => {
+	const quoted = 'const warning = "No hook installed — run `rtk init -g` for automatic token savings";\n';
+	assert.equal(stripRtkHookWarnings(quoted, null), null);
+});
+
+runTest("sanitizeRtkEmojiOutput normalizes RTK-shaped warning output without removing content", () => {
+	const sanitized = sanitizeRtkEmojiOutput(
+		"⚠️  Warning: --hook-only only makes sense with --global\n    For local projects, use default mode or --claude-md\n",
+		"rtk init --hook-only",
+	);
+	assert.equal(
+		sanitized,
+		"[WARN]  Warning: --hook-only only makes sense with --global\n    For local projects, use default mode or --claude-md\n",
+	);
+});
+
+runTest("streaming sanitizer strips hook notices, sanitizes emoji output, and preserves non-text blocks", () => {
+	const hookNoticeResult = {
+		content: [
+			{
+				type: "text",
+				text: "[rtk] /!\\ No hook installed — run `rtk init -g` for automatic token savings\n\nworking tree clean\n",
+			},
+		],
+	};
+	assert.equal(sanitizeStreamingBashExecutionResult(hookNoticeResult, "rtk git status"), true);
+	assert.equal(
+		(hookNoticeResult.content[0] as { text: string }).text,
+		"working tree clean\n",
+	);
+
+	const emojiResult = {
+		content: [
+			{ type: "text", text: "📄 src/file.ts\n✅ Files are identical\n" },
+			{ type: "image", url: "ignored" },
+		],
+	};
+	assert.equal(sanitizeStreamingBashExecutionResult(emojiResult, "rtk git diff -- src/file.ts"), true);
+	assert.equal((emojiResult.content[0] as { text: string }).text, "> src/file.ts\n[OK] Files are identical\n");
+	assert.deepEqual(emojiResult.content[1], { type: "image", url: "ignored" });
+
+	const parseWarningResult = {
+		content: [
+			{
+				type: "text",
+				text: "[rtk] warning: builtin filters: parse failure\n\nworking tree clean\n",
+			},
+		],
+	};
+	assert.equal(sanitizeStreamingBashExecutionResult(parseWarningResult, "rtk git status"), false);
+	assert.equal(
+		(parseWarningResult.content[0] as { text: string }).text,
+		"[rtk] warning: builtin filters: parse failure\n\nworking tree clean\n",
+	);
 });
 
 console.log("All additional coverage tests passed.");

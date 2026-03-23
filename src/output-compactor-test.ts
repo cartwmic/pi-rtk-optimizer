@@ -331,4 +331,170 @@ runTest("search output uses plain-text summary and file markers", () => {
 	assertNoOutputEmoji(compacted);
 });
 
+runTest("rtk env output sanitizes emoji section headers", () => {
+	const compacted = compactBashOutput(
+		"rtk env",
+		"📂 PATH Variables:\n🔧 Language/Runtime:\n☁️  Cloud/Services:\n🛠️  Tools:\n📋 Other:\n📊 Total: 91 vars\n",
+	);
+
+	assert.ok(compacted.includes("PATH Variables:"));
+	assert.ok(compacted.includes("Language/Runtime:"));
+	assert.ok(compacted.includes("Cloud/Services:"));
+	assert.ok(compacted.includes("Tools:"));
+	assert.ok(compacted.includes("Other:"));
+	assert.ok(compacted.includes("Total: 91 vars"));
+	assertNoOutputEmoji(compacted);
+});
+
+runTest("rtk-shaped env output sanitizes even when command name is not rtk", () => {
+	const compacted = compactBashOutput(
+		"echo probe",
+		"📂 PATH Variables:\n🔧 Language/Runtime:\n📊 Total: 91 vars\n",
+	);
+
+	assert.ok(compacted.includes("PATH Variables:"));
+	assert.ok(compacted.includes("Language/Runtime:"));
+	assert.ok(compacted.includes("Total: 91 vars"));
+	assertNoOutputEmoji(compacted);
+});
+
+runTest("rtk git-style output sanitizes emoji status markers", () => {
+	const compacted = compactBashOutput(
+		"rtk git status",
+		"📌 main\n✅ Staged: 1 files\n📝 Modified: 2 files\n❓ Untracked: 1 files\n⚠️  Conflicts: 1 files\n",
+	);
+
+	assert.ok(compacted.includes("Branch: main"));
+	assert.ok(compacted.includes("[OK] Staged: 1 files"));
+	assert.ok(compacted.includes("Modified: 2 files"));
+	assert.ok(compacted.includes("[INFO] Untracked: 1 files"));
+	assert.ok(compacted.includes("[WARN]  Conflicts: 1 files"));
+	assertNoOutputEmoji(compacted);
+});
+
+runTest("rtk grep-style output sanitizes emoji file markers", () => {
+	const compacted = compactBashOutput(
+		"rtk grep EXTENSION_NAME agent/extensions/pi-rtk-optimizer/src/constants.ts",
+		"🔍 2 in 1F:\n\n📄 agent/extensions/pi-rtk-optimizer/src/constants.ts (2):\n     4: export const EXTENSION_NAME = \"pi-rtk-optimizer\";\n",
+	);
+
+	assert.ok(compacted.startsWith("2 in 1F:\n\n> agent/extensions/pi-rtk-optimizer/src/constants.ts (2):"));
+	assertNoOutputEmoji(compacted);
+});
+
+runTest("rtk git diff verbose summary sanitizes file markers", () => {
+	const compacted = compactBashOutput(
+		"rtk git diff -- agent/extensions/pi-mcp-adapter/package.json",
+		"agent/extensions/pi-mcp-adapter/package.json | 2 +-\n\n--- Changes ---\n\n📄 agent/extensions/pi-mcp-adapter/package.json\n  @@ -38,7 +38,7 @@\n  -    \"@mariozechner/pi-coding-agent\": \"^0.58.1\",\n",
+	);
+
+	assert.ok(compacted.includes("--- Changes ---"));
+	assert.ok(compacted.includes("> agent/extensions/pi-mcp-adapter/package.json"));
+	assertNoOutputEmoji(compacted);
+});
+
+runTest("git diff compaction skips already-compacted RTK-shaped output", () => {
+	const compacted = compactBashOutput(
+		"git diff -- agent/extensions/pi-mcp-adapter/package.json",
+		"agent/extensions/pi-mcp-adapter/package.json | 2 +-\n\n--- Changes ---\n\n📄 agent/extensions/pi-mcp-adapter/package.json\n  @@ -38,7 +38,7 @@\n  -    \"@mariozechner/pi-coding-agent\": \"^0.58.1\",\n",
+	);
+
+	assert.ok(compacted.includes("--- Changes ---"));
+	assert.ok(compacted.includes("> agent/extensions/pi-mcp-adapter/package.json"));
+	assertNoOutputEmoji(compacted);
+});
+
+runTest("rtk-shaped diff output sanitizes even when command name is not rtk", () => {
+	const compacted = compactBashOutput(
+		"echo probe",
+		"📊 file-a.txt → file-b.txt\n   +1 added, -1 removed, ~0 modified\n\n-   2 beta\n+   2 gamma\n",
+	);
+
+	assert.ok(compacted.startsWith("file-a.txt -> file-b.txt"));
+	assertNoOutputEmoji(compacted);
+});
+
+runTest("rtk-shaped identical diff output sanitizes even when command name is not rtk", () => {
+	const compacted = compactBashOutput("echo probe", "✅ Files are identical");
+
+	assert.equal(compacted, "[OK] Files are identical");
+	assertNoOutputEmoji(compacted);
+});
+
+runTest("hook warning is stripped even when the command label is not rtk", () => {
+	const compacted = compactBashOutput(
+		"echo probe",
+		"[rtk] /!\\ No hook installed — run `rtk init -g` for automatic token savings\n\n4 files changed\n",
+	);
+
+	assert.equal(compacted, "4 files changed\n");
+});
+
+runTest("hook-only output compacts to an empty text result", () => {
+	const result = compactToolResult(
+		{
+			toolName: "bash",
+			input: { command: "rtk git status" },
+			content: [{ type: "text", text: "[rtk] /!\\ No hook installed — run `rtk init -g` for automatic token savings\n" }],
+		},
+		cloneDefaultConfig(),
+	);
+
+	assert.equal(result.changed, true);
+	assert.ok(result.techniques.includes("rtk-hook-warning"));
+	assert.equal(firstTextBlock(result.content), "");
+});
+
+runTest("non-hook RTK warnings are preserved verbatim", () => {
+	const result = compactToolResult(
+		{
+			toolName: "bash",
+			input: { command: "FOO=1 rtk git status" },
+			content: [{ type: "text", text: "[rtk] warning: builtin filters: parse failure\n\nworking tree clean\n" }],
+		},
+		cloneDefaultConfig(),
+	);
+
+	assert.equal(result.changed, false);
+	assert.equal(result.content, undefined);
+	assert.deepEqual(result.techniques, []);
+});
+
+runTest("emoji RTK warnings stay visible and are sanitized to plain text", () => {
+	const compacted = compactBashOutput(
+		"rtk init --hook-only",
+		"⚠️  Warning: --hook-only only makes sense with --global\n    For local projects, use default mode or --claude-md\n\nready\n",
+	);
+
+	assert.ok(compacted.includes("[WARN]  Warning: --hook-only only makes sense with --global"));
+	assert.ok(compacted.includes("For local projects, use default mode or --claude-md"));
+	assert.ok(compacted.includes("ready\n"));
+	assertNoOutputEmoji(compacted);
+});
+
+runTest("outdated hook warning is stripped while preserving the RTK payload", () => {
+	const compacted = compactBashOutput(
+		"rtk gain",
+		"⚠️  Hook outdated — run `rtk init -g` to update\n\nSaved 42 tokens\n",
+	);
+
+	assert.equal(compacted, "Saved 42 tokens\n");
+});
+
+runTest("quoted hook warning text is preserved as payload", () => {
+	const quotedHookText = 'const warning = "No hook installed — run `rtk init -g` for automatic token savings";\n';
+	const result = compactToolResult(
+		{
+			toolName: "bash",
+			input: { command: "echo probe" },
+			content: [{ type: "text", text: quotedHookText }],
+		},
+		cloneDefaultConfig(),
+	);
+
+	assert.equal(result.changed, false);
+	assert.equal(result.content, undefined);
+	assert.deepEqual(result.techniques, []);
+});
+
 console.log("All output-compactor tests passed.");
