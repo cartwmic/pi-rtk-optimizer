@@ -1,6 +1,8 @@
 import { matchesCommandPatterns, normalizeCommandForDetection } from "./command-detection.js";
 
 const GIT_COMMAND_PATTERNS = [/^git\s+(diff|status|log|show|stash)\b/] as const;
+const RAW_GIT_DIFF_PATTERN = /^diff --git /m;
+const RAW_GIT_STATUS_PATTERN = /^(?:## |(?:M|A|D|R|C|U|\?| )\S)/m;
 
 export function isGitCommand(command: string | undefined | null): boolean {
 	return matchesCommandPatterns(command, GIT_COMMAND_PATTERNS);
@@ -216,10 +218,10 @@ export function compactGitOutput(output: string, command: string | undefined | n
 	}
 
 	if (normalized.startsWith("git diff")) {
-		return compactDiff(output);
+		return RAW_GIT_DIFF_PATTERN.test(output) ? compactDiff(output) : null;
 	}
 	if (normalized.startsWith("git status")) {
-		return compactStatus(output);
+		return RAW_GIT_STATUS_PATTERN.test(output) ? compactStatus(output) : null;
 	}
 	if (normalized.startsWith("git log")) {
 		return compactLog(output);

@@ -8,8 +8,10 @@ import {
 	filterBuildOutput,
 	filterSourceCode,
 	groupSearchResults,
+	sanitizeRtkEmojiOutput,
 	smartTruncate,
 	stripAnsiFast,
+	stripRtkHookWarnings,
 	truncate,
 } from "./techniques/index.js";
 import { trackOutputSavings } from "./output-metrics.js";
@@ -198,6 +200,18 @@ function compactBashText(
 			nextText = stripped;
 			techniques.push("ansi");
 		}
+	}
+
+	const withoutRtkHookWarnings = stripRtkHookWarnings(nextText, command);
+	if (withoutRtkHookWarnings !== null && withoutRtkHookWarnings !== nextText) {
+		nextText = withoutRtkHookWarnings;
+		techniques.push("rtk-hook-warning");
+	}
+
+	const withoutRtkEmoji = sanitizeRtkEmojiOutput(nextText, command);
+	if (withoutRtkEmoji !== null && withoutRtkEmoji !== nextText) {
+		nextText = withoutRtkEmoji;
+		techniques.push("rtk-emoji");
 	}
 
 	if (compaction.filterBuildOutput) {

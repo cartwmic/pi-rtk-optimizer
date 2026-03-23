@@ -168,6 +168,7 @@ declare module "bun:test" {
 declare const process: {
 	platform: string;
 	env: Record<string, string | undefined>;
+	cwd(): string;
 };
 
 declare module "node:os" {
@@ -177,6 +178,8 @@ declare module "node:os" {
 declare module "node:path" {
 	export function join(...segments: string[]): string;
 	export function dirname(path: string): string;
+	export function resolve(...segments: string[]): string;
+	export const sep: string;
 }
 
 declare module "node:fs" {
