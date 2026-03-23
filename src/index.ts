@@ -363,8 +363,8 @@ export default function rtkIntegrationExtension(pi: ExtensionAPI): void {
 			if (config.showRewriteNotifications && ctx.hasUI) {
 				ctx.ui.notify(formatRewriteNotice(decision.originalCommand, decision.rewrittenCommand), "info");
 			}
-			const safeRewrittenCommand = applyRewrittenCommandShellSafetyFixups(decision.rewrittenCommand);
-			event.input.command = applyRtkCommandEnvironment(safeRewrittenCommand);
+			const envScopedRewrittenCommand = applyRtkCommandEnvironment(decision.rewrittenCommand);
+			event.input.command = applyRewrittenCommandShellSafetyFixups(envScopedRewrittenCommand);
 			return {};
 		}
 

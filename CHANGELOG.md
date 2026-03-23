@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-03-24
+
+### Fixed
+- RTK_DB_PATH environment variable now correctly scoped to rewritten producer commands only — Windows commands now use subshell scoping `{ RTK_DB_PATH=...; ... }` instead of leaking the prefix into the rewritten command
+- Command rewrite pipeline now applies environment scoping BEFORE shell safety fixups to prevent env prefix stripping
+
+### Added
+- `shell-env-prefix.ts` module for splitting leading environment variable assignments from commands
+- `splitLeadingEnvAssignments()` function to properly extract `ENV=value` prefixes before command analysis
+
+### Changed
+- Refactored `rtk-command-environment.ts` to use the new `splitLeadingEnvAssignments` utility
+- Refactored `rewrite-pipeline-safety.ts` to preserve env prefixes when analyzing and rewriting rtk commands
+
+### Tests
+- Added test coverage for RTK_DB_PATH scoping on Windows vs Unix platforms
+- Verified env prefix is preserved through the rewrite pipeline
+
 ## [0.5.0] - 2026-03-23
 
 ### Added

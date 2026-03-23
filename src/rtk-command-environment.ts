@@ -1,7 +1,8 @@
 import { join } from "node:path";
 
+import { splitLeadingEnvAssignments } from "./shell-env-prefix.js";
+
 const RTK_DB_PATH_ENV_NAME = "RTK_DB_PATH";
-const LEADING_ENV_ASSIGNMENT_PATTERN = /^((?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|[^\s]+)\s+)*)/;
 const RTK_DB_PATH_ASSIGNMENT_PATTERN = /(?:^|\s)RTK_DB_PATH=(?:"[^"]*"|'[^']*'|[^\s]+)(?=\s|$)/;
 
 function resolveTemporaryDirectory(): string {
@@ -47,8 +48,7 @@ function quoteForShellEnv(value: string): string {
 }
 
 function hasLeadingRtkDbPathAssignment(command: string): boolean {
-	const leadingAssignments = command.match(LEADING_ENV_ASSIGNMENT_PATTERN)?.[1] ?? "";
-	return RTK_DB_PATH_ASSIGNMENT_PATTERN.test(leadingAssignments);
+	return RTK_DB_PATH_ASSIGNMENT_PATTERN.test(splitLeadingEnvAssignments(command).envPrefix);
 }
 
 export function applyRtkCommandEnvironment(command: string): string {

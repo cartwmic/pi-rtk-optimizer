@@ -14,6 +14,7 @@ import { matchesCommandPatterns, normalizeCommandForDetection } from "./techniqu
 import { compactPath } from "./techniques/path-utils.ts";
 import { applyWindowsBashCompatibilityFixes } from "./windows-command-helpers.ts";
 import { applyRewrittenCommandShellSafetyFixups } from "./rewrite-pipeline-safety.ts";
+import { applyRtkCommandEnvironment } from "./rtk-command-environment.ts";
 import { sanitizeStreamingBashExecutionResult } from "./tool-execution-sanitizer.ts";
 import { sanitizeRtkEmojiOutput } from "./techniques/emoji.ts";
 import { stripRtkHookWarnings } from "./techniques/rtk.ts";
@@ -195,6 +196,28 @@ runTest("rewrite pipeline safety buffers rewritten Windows producer commands", (
 	}
 
 	assert.equal(applyRewrittenCommandShellSafetyFixups("git diff | grep TODO"), "git diff | grep TODO");
+});
+
+runTest("rewrite pipeline safety keeps RTK_DB_PATH scoped to rewritten producer commands", () => {
+	const rewritten = applyRewrittenCommandShellSafetyFixups(
+		applyRtkCommandEnvironment("rtk git diff agent/extensions/pi-multi-auth/account-manager.ts | head -200"),
+	);
+
+	if (process.platform === "win32") {
+		assert.ok(rewritten.startsWith("{"));
+		assert.equal(rewritten.startsWith("RTK_DB_PATH="), false);
+		assert.ok(rewritten.includes("RTK_DB_PATH="));
+		assert.ok(
+			rewritten.includes('rtk git diff agent/extensions/pi-multi-auth/account-manager.ts > "$__pi_rtk_pipe_tmp"'),
+		);
+		assert.ok(rewritten.includes('(head -200) < "$__pi_rtk_pipe_tmp"'));
+	} else {
+		assert.ok(rewritten.startsWith("RTK_DB_PATH="));
+		assert.equal(
+			rewritten,
+			applyRtkCommandEnvironment("rtk git diff agent/extensions/pi-multi-auth/account-manager.ts | head -200"),
+		);
+	}
 });
 
 runTest("stripRtkHookWarnings handles bare, prefixed, and already-sanitized hook notices", () => {

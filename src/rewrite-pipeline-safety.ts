@@ -1,3 +1,5 @@
+import { splitLeadingEnvAssignments } from "./shell-env-prefix.js";
+
 interface ParsedPipeline {
 	segments: string[];
 	separators: string[];
@@ -88,18 +90,19 @@ function parseSimpleTopLevelPipeline(command: string): ParsedPipeline | null {
 
 function extractProducerRewritePlan(segment: string, firstSeparator: string): ProducerRewritePlan | null {
 	const trimmed = segment.trim();
-	if (!/^rtk\s+/i.test(trimmed)) {
+	const { envPrefix, command: commandWithOptionalRedirect } = splitLeadingEnvAssignments(trimmed);
+	if (!/^rtk\s+/i.test(commandWithOptionalRedirect)) {
 		return null;
 	}
 
-	const stderrMergeMatch = trimmed.match(/^(.*?)(?:\s+)?2>\s*&1\s*$/u);
+	const stderrMergeMatch = commandWithOptionalRedirect.match(/^(.*?)(?:\s+)?2>\s*&1\s*$/u);
 	if (stderrMergeMatch) {
 		const command = stderrMergeMatch[1]?.trimEnd() ?? "";
-		return command ? { command, captureStderr: true } : null;
+		return command ? { command: `${envPrefix}${command}`.trim(), captureStderr: true } : null;
 	}
 
 	return {
-		command: trimmed,
+		command: `${envPrefix}${commandWithOptionalRedirect}`.trim(),
 		captureStderr: firstSeparator === "|&",
 	};
 }
