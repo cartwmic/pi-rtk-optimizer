@@ -27,10 +27,14 @@
     "pi-package",
     "pi",
     "pi-extension",
+    "pi-coding-agent",
+    "coding-agent",
     "rtk",
     "token-optimization",
     "tool-compaction",
-    "coding-agent"
+    "output-compaction",
+    "command-rewrite",
+    "optimization"
   ],
   "author": "MasuRii",
   "license": "MIT",
