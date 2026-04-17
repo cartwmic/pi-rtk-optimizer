@@ -249,6 +249,14 @@ export default function rtkIntegrationExtension(pi: ExtensionAPI): void {
 		refreshRuntimeStatus,
 		getMetricsSummary: getOutputMetricsSummary,
 		clearMetrics: clearOutputMetrics,
+		execRtkGain: async (args: string[]): Promise<string> => {
+			const result = await pi.exec("rtk", ["gain", ...args], { timeout: 10000 });
+			if (result.code !== 0) {
+				const detail = (result.stderr || result.stdout || "").trim();
+				throw new Error(detail || `rtk gain exited with code ${result.code}`);
+			}
+			return (result.stdout || "").trim();
+		},
 	};
 
 	registerRtkIntegrationCommand(pi, controller);

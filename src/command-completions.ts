@@ -11,6 +11,7 @@ const TOP_LEVEL_SUBCOMMANDS: CompletionDefinition[] = [
 	{ name: "verify", description: "Check whether rtk binary is available" },
 	{ name: "stats", description: "Show output compaction metrics" },
 	{ name: "clear-stats", description: "Clear output compaction metrics" },
+	{ name: "gain", description: "Show RTK CLI token savings (rtk gain)" },
 	{ name: "reset", description: "Reset RTK settings to defaults" },
 	{ name: "help", description: "Show usage help" },
 ];

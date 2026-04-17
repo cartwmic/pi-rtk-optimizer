@@ -18,6 +18,7 @@ interface RtkIntegrationController {
 	refreshRuntimeStatus(): Promise<RuntimeStatus>;
 	getMetricsSummary(): string;
 	clearMetrics(): void;
+	execRtkGain(args: string[]): Promise<string>;
 }
 
 interface SettingValueSyncTarget {
@@ -30,7 +31,7 @@ const SOURCE_FILTER_VALUES = [...RTK_SOURCE_FILTER_LEVELS];
 const TRUNCATE_MAX_CHAR_VALUES = ["4000", "8000", "12000", "20000", "50000", "100000", "200000"];
 const SMART_TRUNCATE_LINE_VALUES = ["40", "80", "120", "160", "220", "320", "500", "1000", "2000", "4000"];
 const RTK_USAGE_TEXT =
-	"Usage: /rtk [show|path|verify|stats|clear-stats|reset|help] (or run /rtk with no args to open settings modal)";
+	"Usage: /rtk [show|path|verify|stats|clear-stats|gain|reset|help] (or run /rtk with no args to open settings modal)";
 
 function parseSourceFilterLevel(
 	value: string,
@@ -494,7 +495,7 @@ async function openSettingsModal(ctx: ExtensionCommandContext, controller: RtkIn
 						}
 					},
 					onClose: () => done(),
-					helpText: `/rtk show • /rtk verify • /rtk stats • /rtk reset • ${controller.getConfigPath()}`,
+					helpText: `/rtk show • /rtk verify • /rtk stats • /rtk gain • /rtk reset • ${controller.getConfigPath()}`,
 					enableSearch: true,
 				},
 				theme,
@@ -580,6 +581,18 @@ async function handleArgs(
 	if (normalized === "clear-stats") {
 		controller.clearMetrics();
 		ctx.ui.notify("RTK metrics cleared.", "info");
+		return true;
+	}
+
+	if (normalized === "gain" || normalized.startsWith("gain ")) {
+		const extraArgs = normalized.startsWith("gain ") ? normalized.slice(5).trim().split(/\s+/) : [];
+		try {
+			const output = await controller.execRtkGain(extraArgs);
+			ctx.ui.notify(output || "No rtk gain data available.", "info");
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			ctx.ui.notify(`rtk gain failed: ${message}`, "error");
+		}
 		return true;
 	}
 

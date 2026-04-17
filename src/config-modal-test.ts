@@ -106,6 +106,7 @@ await runAsyncTest("config modal command handlers route RTK subcommands to contr
 		clearMetrics: () => {
 			controllerState.cleared += 1;
 		},
+		execRtkGain: async () => "RTK Token Savings (Global Scope)\nTotal commands: 10",
 	};
 
 	let registeredName = "";
@@ -151,6 +152,9 @@ await runAsyncTest("config modal command handlers route RTK subcommands to contr
 	await definition?.handler("clear-stats", infoCtx.ctx);
 	assert.equal(controllerState.cleared, 1);
 	assert.equal(lastNotification(infoCtx.notifications).message, "RTK metrics cleared.");
+
+	await definition?.handler("gain", infoCtx.ctx);
+	assert.ok(lastNotification(infoCtx.notifications).message.includes("Total commands: 10"));
 
 	await definition?.handler("reset", infoCtx.ctx);
 	assert.equal(controllerState.lastSavedMode, "rewrite");
