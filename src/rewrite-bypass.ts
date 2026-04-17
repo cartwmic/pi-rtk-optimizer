@@ -278,9 +278,17 @@ function shouldBypassNativeShellProxyRewrite(tokens: string[]): boolean {
 	return false;
 }
 
+function isCdSegment(segment: string): boolean {
+	const tokens = splitCommandWords(segment);
+	return normalizeCommandWord(tokens[0] ?? "") === "cd";
+}
+
 /**
  * Skips entire compound commands when any segment depends on native shell piping or
  * formatting-sensitive search/list output that RTK wrappers may not preserve exactly.
+ *
+ * `cd` segments are excluded from the check because they only set the working directory
+ * and produce no output — they cannot affect rewrite safety of subsequent segments.
  */
 export function shouldBypassWholeCommandRewrite(command: string): boolean {
 	const segments = splitTopLevelCompoundSegments(command.trim());
@@ -288,7 +296,12 @@ export function shouldBypassWholeCommandRewrite(command: string): boolean {
 		return false;
 	}
 
-	return segments.some((segment) => {
+	const nonCdSegments = segments.filter((s) => !isCdSegment(s));
+	if (nonCdSegments.length <= 1) {
+		return false;
+	}
+
+	return nonCdSegments.some((segment) => {
 		const tokens = splitCommandWords(segment);
 		const commandName = normalizeCommandWord(tokens[0] ?? "");
 		return UNSAFE_COMPOUND_REWRITE_COMMANDS.has(commandName) || shouldBypassNativeShellProxyRewrite(tokens);

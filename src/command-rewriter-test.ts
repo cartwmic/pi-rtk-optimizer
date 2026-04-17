@@ -148,6 +148,44 @@ runTest("native bash shell proxy flows bypass rewrites when RTK parity is unsafe
 	assert.equal(decision.reason, "no_match");
 });
 
+runTest("cd prefix does not bypass rewriting of subsequent commands", () => {
+	const config = cloneDefaultConfig();
+
+	// cd && <command> should rewrite the command segment
+	const lsDecision = computeRewriteDecision("cd /foo && ls", config);
+	assert.equal(lsDecision.changed, true, "cd && ls should rewrite");
+	assert.ok(lsDecision.rewrittenCommand.includes("rtk ls"), "ls should become rtk ls");
+	assert.ok(lsDecision.rewrittenCommand.startsWith("cd /foo && "), "cd prefix preserved");
+
+	const catDecision = computeRewriteDecision("cd /some/path && cat file.txt", config);
+	assert.equal(catDecision.changed, true, "cd && cat should rewrite");
+	assert.ok(catDecision.rewrittenCommand.includes("rtk read"), "cat should become rtk read");
+
+	const grepDecision = computeRewriteDecision("cd /src && grep -r TODO .", config);
+	assert.equal(grepDecision.changed, true, "cd && grep should rewrite");
+	assert.ok(grepDecision.rewrittenCommand.includes("rtk grep"), "grep should become rtk grep");
+
+	const findDecision = computeRewriteDecision("cd /project && find . -name '*.ts'", config);
+	assert.equal(findDecision.changed, true, "cd && find should rewrite");
+	assert.ok(findDecision.rewrittenCommand.includes("rtk find"), "find should become rtk find");
+
+	// Multiple cd segments should also work
+	const multiCd = computeRewriteDecision("cd /a && cd /b && git status", config);
+	assert.equal(multiCd.changed, true, "multiple cd && git should rewrite");
+	assert.ok(multiCd.rewrittenCommand.includes("rtk git"), "git should become rtk git");
+});
+
+runTest("cd prefix does not defeat bypass for genuinely unsafe compounds", () => {
+	const config = cloneDefaultConfig();
+
+	// cd + genuine pipe should still bypass
+	const pipedGrep = computeRewriteDecision("cd /foo && grep -R TODO src | head -n 5", config);
+	assert.equal(pipedGrep.changed, false, "cd + grep|head should still bypass");
+
+	const pipedFind = computeRewriteDecision("cd /foo && find src -type f | xargs grep todo", config);
+	assert.equal(pipedFind.changed, false, "cd + find|xargs should still bypass");
+});
+
 runTest("python proxy rewrites preserve the original executable token", () => {
 	const config = cloneDefaultConfig();
 	const decision = computeRewriteDecision('python3.11 -c "print(1)"', config);
