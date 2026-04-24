@@ -36,7 +36,8 @@ export function shouldInjectSourceFilterTroubleshootingNote(config: RtkIntegrati
 		config.enabled &&
 		compaction.enabled &&
 		compaction.sourceCodeFilteringEnabled &&
-		compaction.sourceCodeFiltering !== "none"
+		compaction.sourceCodeFiltering !== "none" &&
+		(compaction.smartTruncate.enabled || compaction.truncate.enabled)
 	);
 }
 

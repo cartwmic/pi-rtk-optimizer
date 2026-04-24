@@ -35,6 +35,8 @@ function configWith(overrides: {
 	compactionEnabled?: boolean;
 	sourceFilteringEnabled?: boolean;
 	sourceFilteringLevel?: "none" | "minimal" | "aggressive";
+	smartTruncateEnabled?: boolean;
+	truncateEnabled?: boolean;
 }): typeof DEFAULT_RTK_INTEGRATION_CONFIG {
 	const base = DEFAULT_RTK_INTEGRATION_CONFIG;
 	return {
@@ -46,6 +48,14 @@ function configWith(overrides: {
 			sourceCodeFilteringEnabled:
 				overrides.sourceFilteringEnabled ?? base.outputCompaction.sourceCodeFilteringEnabled,
 			sourceCodeFiltering: overrides.sourceFilteringLevel ?? base.outputCompaction.sourceCodeFiltering,
+			smartTruncate: {
+				...base.outputCompaction.smartTruncate,
+				enabled: overrides.smartTruncateEnabled ?? base.outputCompaction.smartTruncate.enabled,
+			},
+			truncate: {
+				...base.outputCompaction.truncate,
+				enabled: overrides.truncateEnabled ?? base.outputCompaction.truncate.enabled,
+			},
 		},
 	};
 }
@@ -106,6 +116,15 @@ runTest("source-filter note skipped when filtering level is 'none'", () => {
 	assert.equal(
 		shouldInjectSourceFilterTroubleshootingNote(
 			configWith({ sourceFilteringEnabled: true, sourceFilteringLevel: "none" }),
+		),
+		false,
+	);
+});
+
+runTest("source-filter note skipped when all read filtering safeguards are disabled", () => {
+	assert.equal(
+		shouldInjectSourceFilterTroubleshootingNote(
+			configWith({ smartTruncateEnabled: false, truncateEnabled: false }),
 		),
 		false,
 	);
