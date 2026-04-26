@@ -30,6 +30,17 @@ function trimMessage(raw: string, maxLength = 220): string {
 const SOURCE_FILTER_TROUBLESHOOTING_NOTE =
 	"RTK note: If file edits repeatedly fail because old text does not match, ask the user to manually run '/rtk' in the Pi TUI, disable 'Read source filtering enabled', re-read the file, apply the edit, then ask the user to manually re-enable it in the Pi TUI.";
 
+export function shouldInjectSourceFilterTroubleshootingNote(config: RtkIntegrationConfig): boolean {
+	const compaction = config.outputCompaction;
+	return (
+		config.enabled &&
+		compaction.enabled &&
+		compaction.sourceCodeFilteringEnabled &&
+		compaction.sourceCodeFiltering !== "none" &&
+		(compaction.smartTruncate.enabled || compaction.truncate.enabled)
+	);
+}
+
 function mergeCompactionDetails(
 	existingDetails: unknown,
 	compaction: ToolResultCompactionMetadata,
@@ -270,14 +281,6 @@ export default function rtkIntegrationExtension(pi: ExtensionAPI): void {
 		maybeWarnRtkMissing(ctx);
 	});
 
-	pi.on("session_switch", async (_event, ctx) => {
-		warnedMessages.reset();
-		suggestionNotices.reset();
-		clearTrackedBashCommands();
-		missingRtkWarningShown = false;
-		await refreshConfig(ctx);
-		maybeWarnRtkMissing(ctx);
-	});
 
 	pi.on("agent_end", async () => {
 		clearTrackedBashCommands();
@@ -331,6 +334,10 @@ export default function rtkIntegrationExtension(pi: ExtensionAPI): void {
 	pi.on("before_agent_start", async (event, ctx) => {
 		await ensureRuntimeStatusFresh();
 		maybeWarnRtkMissing(ctx);
+
+		if (!shouldInjectSourceFilterTroubleshootingNote(config)) {
+			return {};
+		}
 
 		if (event.systemPrompt.includes(SOURCE_FILTER_TROUBLESHOOTING_NOTE)) {
 			return {};
