@@ -11,6 +11,7 @@ export interface RtkIntegrationController {
 	refreshRuntimeStatus(): Promise<RuntimeStatus>;
 	getMetricsSummary(): string;
 	clearMetrics(): void;
+	execRtkGain(args: string[]): Promise<string>;
 }
 
 const loadCommandModalModule = createLazyModuleLoader<typeof import("./config-modal.js")>("./config-modal.js");
